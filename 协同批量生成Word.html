@@ -153,7 +153,6 @@
     <input type="file" id="ghUploadFile" accept=".docx,.doc" onchange="ghOnUploadFile(event)">
     <button onclick="document.getElementById('ghUploadFile').click()">选择本地文件</button>
     <button id="ghUploadBtn" onclick="ghUpload()" disabled>上传到库</button>
-    <button class="ghost" id="ghUploadCurBtn" onclick="ghUploadCurrent()" disabled>上传当前模板到库</button>
     <span id="ghUploadName" class="hint"></span>
     <span id="ghUploadTokenHint" class="warn" style="display:none">⚠ 需先在上方填写并保存有写权限的 GitHub Token，才能上传/删除</span>
   </div>
@@ -200,7 +199,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
  * 设计要点：Excel 只解析一次，存入 state.dataRows（单一数据源）；
  * 表格是视图、生成直接遍历 state.dataRows，避免“导入对、生成错”。
  * ============================================================ */
-const APP_VERSION = 'v20260716-rewrite9';
+const APP_VERSION = 'v20260716-rewrite10';
 const $ = id => document.getElementById(id);
 document.getElementById('ver').textContent = APP_VERSION;
 
@@ -740,7 +739,6 @@ function ghHeaders(){
 function hasToken(){ return !!($('ghToken').value.trim() || localStorage.getItem('ghToken')); }
 function ghRefreshUploadState(){
   const t=hasToken();
-  if($('ghUploadCurBtn')) $('ghUploadCurBtn').disabled=!t;
   if($('ghUploadBtn')) $('ghUploadBtn').disabled = !(t && window._ghUploadFile);
   if($('ghUploadTokenHint')) $('ghUploadTokenHint').style.display = t ? 'none' : 'inline';
 }
@@ -902,18 +900,6 @@ window.ghUpload=async function(){
     await ghUploadBytes(f.name, bytes);
     $('ghStatus').innerHTML='<span class="ok">上传成功：'+f.name+'（稍后点「连接/刷新列表」查看）</span>';
     ghList().catch(()=>{}); // 一致性延迟下不阻塞状态
-  }catch(e){ $('ghStatus').innerHTML='<span class="err">'+e.message+'</span>'; }
-  finally{ btn.disabled=false; }
-};
-window.ghUploadCurrent=async function(){
-  const btn=$('ghUploadCurBtn'); btn.disabled=true;
-  try{
-    let bytes, name;
-    if(state.template && state.template.bytes){ bytes=state.template.bytes; name=state.templateName||'模板.docx'; }
-    else { bytes=b64ToBytes(TPL_DOCX_B64); name='模板.docx'; }
-    await ghUploadBytes(name, bytes);
-    $('ghStatus').innerHTML='<span class="ok">已上传当前模板到库：'+name+'</span>';
-    await ghList();
   }catch(e){ $('ghStatus').innerHTML='<span class="err">'+e.message+'</span>'; }
   finally{ btn.disabled=false; }
 };
