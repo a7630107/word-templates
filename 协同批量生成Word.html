@@ -125,29 +125,56 @@
   </div>
 </div>
 
+<!-- 共享库：GitHub 账号设置（Word / Excel 共用，避免两个界面都填一遍） -->
 <div class="card" style="max-width:1180px;margin:0 auto 16px">
-  <h2><span class="step">★</span> 共享模板库（GitHub）</h2>
+  <h2><span class="step">★</span> 共享模板库 · GitHub 账号设置（Word / Excel 共用）</h2>
   <div class="row">
     <label class="lbl">仓库</label><input id="ghRepo" class="txt" value="a7630107/word-templates" placeholder="owner/repo" style="width:200px">
     <label class="lbl">分支</label><input id="ghBranch" class="txt" value="main" style="width:80px">
-    <label class="lbl">目录</label><input id="ghDir" class="txt" value="templates/word" style="width:150px">
-    <button onclick="ghConnect()">连接 / 刷新列表</button>
+    <label class="lbl">Token(上传/删除用)</label><input id="ghToken" class="txt" type="password" placeholder="ghp_xxx 仅存本机浏览器" style="width:260px">
+    <button class="ghost" onclick="ghSaveToken()">保存 Token</button>
   </div>
   <div class="row">
-    <label class="lbl">Token(上传用)</label><input id="ghToken" class="txt" type="password" placeholder="ghp_xxx 仅存本机浏览器" style="width:260px">
-    <button class="ghost" onclick="ghSaveToken()">保存 Token</button>
-    <span class="hint">下载无需 Token（仓库需公开或有读权限）；上传需有写权限的 Personal Access Token。</span>
+    <span class="hint">下载 / 列目录无需 Token（仓库需公开或有读权限）；上传 / 删除需有写权限的 Personal Access Token。Token 仅存于本机浏览器。</span>
+  </div>
+</div>
+
+<!-- Word 模板共享库（卡片①） -->
+<div class="card" style="max-width:1180px;margin:0 auto 16px">
+  <h2><span class="step">①</span> Word 模板共享库</h2>
+  <div class="row">
+    <label class="lbl">目录</label><input id="ghDir" class="txt" value="templates/word" style="width:150px">
+    <button onclick="ghConnect()">连接 / 刷新列表</button>
   </div>
   <div class="status" id="ghStatus">未连接。</div>
   <div class="ghlist" id="ghList"></div>
   <div class="row" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
-    <span class="hint">把本地模板上传到库：</span>
+    <span class="hint">把本地 Word 模板上传到库：</span>
     <input type="file" id="ghUploadFile" accept=".docx,.doc" onchange="ghOnUploadFile(event)">
     <button onclick="document.getElementById('ghUploadFile').click()">选择本地文件</button>
     <button id="ghUploadBtn" onclick="ghUpload()" disabled>上传到库</button>
     <button class="ghost" id="ghUploadCurBtn" onclick="ghUploadCurrent()" disabled>上传当前模板到库</button>
     <span id="ghUploadName" class="hint"></span>
     <span id="ghUploadTokenHint" class="warn" style="display:none">⚠ 需先在上方填写并保存有写权限的 GitHub Token，才能上传/删除</span>
+  </div>
+</div>
+
+<!-- Excel 数据模板共享库（卡片②，与 Word 完全独立） -->
+<div class="card" style="max-width:1180px;margin:0 auto 16px">
+  <h2><span class="step">②</span> Excel 数据模板共享库</h2>
+  <div class="row">
+    <label class="lbl">目录</label><input id="gxDir" class="txt" value="templates/excel" style="width:150px">
+    <button onclick="gxConnect()">连接 / 刷新列表</button>
+  </div>
+  <div class="status" id="gxStatus">未连接。</div>
+  <div class="ghlist" id="gxList"></div>
+  <div class="row" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
+    <span class="hint">把本地 Excel 数据模板上传到库：</span>
+    <input type="file" id="gxUploadFile" accept=".xlsx" onchange="gxOnUploadFile(event)">
+    <button onclick="document.getElementById('gxUploadFile').click()">选择本地文件</button>
+    <button id="gxUploadBtn" onclick="gxUpload()" disabled>上传到库</button>
+    <span id="gxUploadName" class="hint"></span>
+    <span id="gxUploadTokenHint" class="warn" style="display:none">⚠ 需先在上方填写并保存有写权限的 GitHub Token，才能上传/删除</span>
   </div>
 </div>
 
@@ -173,7 +200,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
  * 设计要点：Excel 只解析一次，存入 state.dataRows（单一数据源）；
  * 表格是视图、生成直接遍历 state.dataRows，避免“导入对、生成错”。
  * ============================================================ */
-const APP_VERSION = 'v20260716-rewrite8';
+const APP_VERSION = 'v20260716-rewrite9';
 const $ = id => document.getElementById(id);
 document.getElementById('ver').textContent = APP_VERSION;
 
@@ -182,6 +209,7 @@ document.getElementById('ver').textContent = APP_VERSION;
   const t=localStorage.getItem('ghToken');
   if(t) document.getElementById('ghToken').value=t;
   ghRefreshUploadState();
+  gxRefreshUploadState();
 })();
 
 const state = {
@@ -521,6 +549,21 @@ window.onExcelFile=async function(e){
   }
 };
 
+/* 共享库 Excel「使用」：把下载到的 .xlsx 字节直接设为当前数据源（复用 onExcelFile 的解析管线） */
+window.applyExcel=async function(bytes, name){
+  const rows=await parseXlsx(bytes);
+  if(!rows.length) throw new Error('未解析到任何行');
+  const { phRow, headerRow, dataStart } = detectHeader(rows);
+  const dataRows = rows.slice(dataStart).filter(r=>r.some(v=>String(v).trim()!==''));
+  state.headers = headerRow;
+  state.phRow = phRow || [];
+  state.dataRows = dataRows;
+  state.colMap = buildColMap(phRow);
+  state.fnIdx = findFnCol(headerRow);
+  renderHeaders(); renderTable(); renderFnColSelect(); updateGenBtn();
+  $('dataStatus').innerHTML='<span class="ok">已载入共享 Excel 数据模板：'+name+'（'+dataRows.length+' 行数据）</span>';
+};
+
 /* ---------------- 导入模板 ---------------- */
 window.onTemplateFile=async function(e){
   const f=e.target.files[0]; if(!f) return;
@@ -723,6 +766,7 @@ window.ghSaveToken=function(){
   if(t) localStorage.setItem('ghToken', t);
   $('ghStatus').innerHTML='<span class="ok">Token 已保存到本机浏览器。</span>';
   ghRefreshUploadState();
+  gxRefreshUploadState();
 };
 window.ghConnect=async function(){
   const { repo }=ghRepoInfo();
@@ -739,7 +783,13 @@ async function ghList(){
   try{
     const r=await fetch(`https://api.github.com/repos/${repo}/${path}?ref=${branch}`,{headers:ghHeaders()});
     if(r.status===401) throw new Error('未授权：私有库需填写有效 Token（保存后再试）');
-    if(r.status===404) throw new Error('仓库或目录不存在（检查 owner/repo、分支、目录）');
+    if(r.status===404){
+      const rootR=await fetch(`https://api.github.com/repos/${repo}/contents?ref=${branch}`,{headers:ghHeaders()});
+      if(rootR.status===404) throw new Error('仓库不存在（检查 owner/repo 与分支）');
+      $('ghList').innerHTML='<div class="hint">Word 共享目录「'+dir+'」尚未创建。可在下方上传本地文件。</div>';
+      $('ghStatus').innerHTML='<span class="ok">目录未创建，待上传首个模板。</span>';
+      return;
+    }
     if(!r.ok) throw new Error('列出失败：HTTP '+r.status);
     const items=await r.json();
     const files=(Array.isArray(items)?items:[]).filter(it=>/\.(docx|doc)$/i.test(it.name) && it.type==='file');
@@ -866,6 +916,152 @@ window.ghUploadCurrent=async function(){
     await ghList();
   }catch(e){ $('ghStatus').innerHTML='<span class="err">'+e.message+'</span>'; }
   finally{ btn.disabled=false; }
+};
+
+/* ---------------- Excel 共享模板库（gx 前缀，与 Word 的 gh 完全独立；账号/Token 共用上方 ghRepo/ghBranch/ghToken） ---------------- */
+function gxRepoInfo(){
+  const repo=$('ghRepo').value.trim();
+  const branch=$('ghBranch').value.trim()||'main';
+  const dir=$('gxDir').value.trim().replace(/\/+$/,'');
+  return { repo, branch, dir };
+}
+function gxRefreshUploadState(){
+  const t=hasToken();
+  if($('gxUploadBtn')) $('gxUploadBtn').disabled = !(t && window._gxUploadFile);
+  if($('gxUploadTokenHint')) $('gxUploadTokenHint').style.display = t ? 'none' : 'inline';
+}
+function gxHeaders(){ return ghHeaders(); } // 复用共享 Token
+async function gxList(){
+  const { repo, branch, dir }=gxRepoInfo();
+  if(!repo){ $('gxStatus').innerHTML='<span class="err">请先填写仓库 owner/repo</span>'; return; }
+  const path = dir ? 'contents/'+dir : 'contents';
+  $('gxStatus').innerHTML='<span class="ok">连接中…</span>';
+  try{
+    const r=await fetch(`https://api.github.com/repos/${repo}/${path}?ref=${branch}`,{headers:gxHeaders()});
+    if(r.status===401) throw new Error('未授权：私有库需填写有效 Token（保存后再试）');
+    if(r.status===404){
+      const rootR=await fetch(`https://api.github.com/repos/${repo}/contents?ref=${branch}`,{headers:gxHeaders()});
+      if(rootR.status===404) throw new Error('仓库不存在（检查 owner/repo 与分支）');
+      $('gxList').innerHTML='<div class="hint">Excel 共享目录「'+dir+'」尚未创建。请在下方「选择本地文件」→「上传到库」上传第一个 .xlsx 模板，目录会自动生成。</div>';
+      $('gxStatus').innerHTML='<span class="ok">目录未创建，待上传首个模板。</span>';
+      return;
+    }
+    if(!r.ok) throw new Error('列出失败：HTTP '+r.status);
+    const items=await r.json();
+    const files=(Array.isArray(items)?items:[]).filter(it=>/\.xlsx$/i.test(it.name) && it.type==='file');
+    if(!files.length){
+      $('gxList').innerHTML='<div class="hint">该目录暂无 .xlsx 模板。可在下方上传本地文件。</div>';
+      $('gxStatus').innerHTML='<span class="ok">连接成功，暂无模板。</span>';
+      return;
+    }
+    const canDel=hasToken();
+    $('gxList').innerHTML=files.map(it=>{
+      const kb=(it.size/1024).toFixed(1)+' KB';
+      const p=encodeURIComponent(it.path), n=encodeURIComponent(it.name), s=it.sha;
+      return '<div class="ghitem"><span class="nm">'+it.name+'</span><span class="meta">'+kb+'</span>'
+        +'<button onclick="gxUse(\''+p+'\',\''+n+'\')">使用</button>'
+        +'<button class="ghost" onclick="gxDownload(\''+p+'\',\''+n+'\')">下载</button>'
+        +(canDel?'<button class="danger" onclick="gxDelete(\''+p+'\',\''+s+'\')">删除</button>':'')+'</div>';
+    }).join('');
+    $('gxStatus').innerHTML='<span class="ok">连接成功，共 '+files.length+' 个模板。</span>';
+  }catch(e){ $('gxStatus').innerHTML='<span class="err">'+e.message+'</span>'; }
+}
+async function gxFetchBytes(path, branch, repo){
+  const r=await fetch(`https://api.github.com/repos/${repo}/contents/${encPath(path)}?ref=${branch}`,{headers:gxHeaders()});
+  if(!r.ok) throw new Error('获取失败：HTTP '+r.status);
+  const j=await r.json();
+  return b64ToBytes(j.content);
+}
+window.gxUse=async function(pathEnc, nameEnc){
+  const path=decodeURIComponent(pathEnc), name=decodeURIComponent(nameEnc);
+  const { repo, branch }=gxRepoInfo();
+  try{
+    const bytes=await gxFetchBytes(path, branch, repo);
+    await applyExcel(bytes, name);
+    $('gxStatus').innerHTML='<span class="ok">已载入共享 Excel 数据模板：'+name+'</span>';
+  }catch(e){ alert('使用失败：'+e.message); }
+};
+window.gxDownload=async function(pathEnc, nameEnc){
+  const path=decodeURIComponent(pathEnc), name=decodeURIComponent(nameEnc);
+  const { repo, branch }=gxRepoInfo();
+  try{
+    const bytes=await gxFetchBytes(path, branch, repo);
+    downloadBlob(new Blob([bytes], {type:'application/octet-stream'}), name);
+  }catch(e){ alert('下载失败：'+e.message); }
+};
+window.gxDelete=async function(pathEnc, sha){
+  const path=decodeURIComponent(pathEnc);
+  const name=path.split('/').pop();
+  const { repo, branch }=gxRepoInfo();
+  const token=$('ghToken').value.trim() || localStorage.getItem('ghToken') || '';
+  if(!token){ alert('删除需要 Token：请先在上方填写有写权限的 GitHub Token 并点击「保存 Token」。'); return; }
+  if(!confirm('确定从共享库删除「'+name+'」吗？\n此操作不可撤销（只能靠 GitHub 提交历史找回）。')) return;
+  try{
+    const head=gxHeaders();
+    let curSha=sha;
+    const getR=await fetch(`https://api.github.com/repos/${repo}/contents/${encPath(path)}?ref=${branch}`,{headers:head});
+    if(getR.status===200){ const j=await getR.json(); curSha=j.sha; }
+    else if(getR.status===404){ $('gxStatus').innerHTML='<span class="ok">已删除：'+name+'</span>'; await gxList(); return; }
+    const body=JSON.stringify({ message:'删除 Excel 模板：'+name, sha:curSha, branch });
+    $('gxStatus').innerHTML='<span class="ok">删除中…</span>';
+    const r=await fetch(`https://api.github.com/repos/${repo}/contents/${encPath(path)}`,{ method:'DELETE', headers:{...head,'Content-Type':'application/json'}, body });
+    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error('删除失败：'+(e.message||r.status)); }
+    $('gxStatus').innerHTML='<span class="ok">已删除：'+name+'（稍后点「连接/刷新列表」查看最新）</span>';
+    const items=[...document.querySelectorAll('#gxList .ghitem')];
+    const t=items.find(it=>it.querySelector('.nm').textContent===name);
+    if(t) t.remove();
+  }catch(e){ $('gxStatus').innerHTML='<span class="err">'+e.message+'</span>'; }
+};
+window.gxOnUploadFile=function(e){
+  const f=e.target.files[0]; if(!f) return;
+  window._gxUploadFile=f;
+  $('gxUploadName').textContent='待上传：'+f.name;
+  gxRefreshUploadState();
+};
+async function gxUploadBytes(name, bytes){
+  const { repo, branch, dir }=gxRepoInfo();
+  const token=$('ghToken').value.trim() || localStorage.getItem('ghToken') || '';
+  if(!repo) throw new Error('请先填写仓库 owner/repo');
+  if(!token) throw new Error('上传需要 Token（填写并保存）');
+  const path = dir ? dir+'/'+name : name;
+  const content=bytesToB64(bytes);
+  const head=gxHeaders();
+  let lastErr=null;
+  for(let attempt=0; attempt<3; attempt++){
+    let sha=null;
+    const getR=await fetch(`https://api.github.com/repos/${repo}/contents/${encPath(path)}?ref=${branch}`,{headers:head});
+    if(getR.status===200){ const j=await getR.json(); sha=j.sha; }
+    else if(getR.status!==404){ const e=await getR.json().catch(()=>({})); throw new Error('查询已有文件失败：'+(e.message||getR.status)); }
+    const body=JSON.stringify({ message:'上传/更新 Excel 模板：'+name, content, branch, ...(sha?{sha}:{}) });
+    const putR=await fetch(`https://api.github.com/repos/${repo}/contents/${encPath(path)}`,{ method:'PUT', headers:{...head,'Content-Type':'application/json'}, body });
+    if(putR.ok) return;
+    let em=null; try{ em=(await putR.json()).message; }catch(e){}
+    lastErr='上传失败：'+(em||putR.status);
+    if(putR.status!==409) throw new Error(lastErr);
+    await new Promise(r=>setTimeout(r,800));
+  }
+  throw new Error(lastErr || '上传失败：重试次数超限');
+}
+window.gxUpload=async function(){
+  if(!hasToken()){ alert('请先在上方填写有写权限的 GitHub Token 并点击「保存 Token」后再上传。'); return; }
+  const f=window._gxUploadFile;
+  if(!f){ alert('请先选择本地文件'); return; }
+  const btn=$('gxUploadBtn'); btn.disabled=true;
+  $('gxStatus').innerHTML='<span class="ok">上传中…</span>';
+  try{
+    const bytes=new Uint8Array(await f.arrayBuffer());
+    await gxUploadBytes(f.name, bytes);
+    $('gxStatus').innerHTML='<span class="ok">上传成功：'+f.name+'（稍后点「连接/刷新列表」查看）</span>';
+    gxList().catch(()=>{});
+  }catch(e){ $('gxStatus').innerHTML='<span class="err">'+e.message+'</span>'; }
+  finally{ btn.disabled=false; }
+};
+window.gxConnect=async function(){
+  const { repo }=gxRepoInfo();
+  if(!repo){ $('gxStatus').innerHTML='<span class="err">请先填写仓库 owner/repo</span>'; return; }
+  const t=$('ghToken').value.trim(); if(t) localStorage.setItem('ghToken', t);
+  gxRefreshUploadState();
+  await gxList();
 };
 
 /* ---------------- 渲染 ---------------- */
